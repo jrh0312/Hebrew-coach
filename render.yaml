@@ -74,7 +74,6 @@ services:
     name: hebrew-coach-frontend
     env: static
     plan: free
-    region: frankfurt
 
     rootDir: frontend
     buildCommand: npm install && npm run build
