@@ -1,0 +1,28 @@
+/* Global reset — everything else lives in App.css */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Use the full safe area on iPhone notch / home-bar models */
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  /* Prevent iOS text-size adjustment when rotating */
+  -webkit-text-size-adjust: 100%;
+  /* Smoother fonts on Retina */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Kill 300 ms tap delay */
+  touch-action: manipulation;
+}
+
+/* Prevent pull-to-refresh interfering with the sticky header */
+html, body {
+  overscroll-behavior-y: none;
+}

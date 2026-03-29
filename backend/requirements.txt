@@ -1,0 +1,17 @@
+# Hebrew Pronunciation Coach — Python dependencies
+# Pin to known-working versions; bump with care.
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9   # required for File/Form uploads
+
+# Google Cloud TTS
+google-cloud-texttospeech==2.16.3
+
+# Azure Speech SDK (pronunciation assessment)
+azure-cognitiveservices-speech==1.38.0
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.7.1

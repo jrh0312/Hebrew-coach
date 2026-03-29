@@ -1,0 +1,112 @@
+# render.yaml — Hebrew Pronunciation Coach
+# Render Blueprint: deploys both backend and frontend in one go.
+#
+# DEPLOY ORDER:
+#   1. Push this repo to GitHub.
+#   2. render.com → New → Blueprint → connect your repo.
+#   3. Render creates both services. The backend URL will be
+#      https://hebrew-coach-api.onrender.com  (or similar).
+#   4. In the Render dashboard, set the two "sync: false" secrets
+#      (GOOGLE_TTS_API_KEY, AZURE_SPEECH_KEY) for the backend service.
+#   5. Set VITE_API_URL for the frontend service (see note below),
+#      then trigger a manual redeploy of the frontend.
+#   6. Update ALLOWED_ORIGINS on the backend to include the
+#      frontend URL, then redeploy the backend.
+#
+# Full instructions: see README.md → "Deploying to Render"
+
+services:
+
+  # ────────────────────────────────────────────────────────────────
+  # Backend — FastAPI (Python)
+  # ────────────────────────────────────────────────────────────────
+  - type: web
+    name: hebrew-coach-api
+    env: python
+    plan: free
+    region: frankfurt          # Closest Render free-tier region to Israel
+
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    # Render uses this path to decide if the service is healthy.
+    # If it returns non-2xx the deploy is marked failed.
+    healthCheckPath: /api/health
+
+    envVars:
+      # ── Google Cloud TTS ────────────────────────────────────────
+      # Option A — Simple API key (recommended for starters)
+      # Get it from: console.cloud.google.com → APIs & Services → Credentials
+      - key: GOOGLE_TTS_API_KEY
+        sync: false            # ← Set this in Render dashboard → Environment
+
+      # Option B — Service account JSON (for production)
+      # Base64-encode the JSON file and paste the result here:
+      #   base64 -i service-account.json | pbcopy   (macOS)
+      #   base64 service-account.json | xclip       (Linux)
+      # Then in your backend code you'd decode it. See README for details.
+      # - key: GOOGLE_CREDENTIALS_B64
+      #   sync: false
+
+      # ── Azure Speech ─────────────────────────────────────────────
+      # Get from: portal.azure.com → your Speech resource → Keys and Endpoint
+      - key: AZURE_SPEECH_KEY
+        sync: false            # ← Set this in Render dashboard → Environment
+
+      - key: AZURE_SPEECH_REGION
+        value: westeurope      # Change only if you created the Azure resource elsewhere
+
+      # ── CORS ──────────────────────────────────────────────────────
+      # After your frontend deploys, update this to its actual URL, e.g.:
+      #   https://hebrew-coach-frontend.onrender.com
+      # You can add multiple comma-separated origins if needed.
+      # Marked sync:false so you fill it in the dashboard after you know
+      # the frontend URL (avoids a chicken-and-egg problem).
+      - key: ALLOWED_ORIGINS
+        sync: false            # ← Set to https://<your-frontend>.onrender.com
+
+
+  # ────────────────────────────────────────────────────────────────
+  # Frontend — React / Vite (Static Site)
+  # ────────────────────────────────────────────────────────────────
+  - type: web
+    name: hebrew-coach-frontend
+    env: static
+    plan: free
+    region: frankfurt
+
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+
+    headers:
+      # Hashed asset files are immutable — cache them for a year
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+
+      # Service worker must always be fresh
+      - path: /sw.js
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+
+      # Everything else: revalidate on every request
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+
+    routes:
+      # SPA fallback — send all paths to index.html so React Router works
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+    envVars:
+      # IMPORTANT — This is a BUILD-TIME variable baked into the JS bundle.
+      # Set it to:  https://<your-backend-name>.onrender.com/api
+      # (include the /api path suffix)
+      # After setting it you must trigger a manual redeploy of the frontend
+      # for the new value to take effect.
+      - key: VITE_API_URL
+        sync: false            # ← Set to https://hebrew-coach-api.onrender.com/api

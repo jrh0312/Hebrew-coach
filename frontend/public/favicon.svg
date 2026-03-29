@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="18" fill="#0d1117"/>
+  <rect x="4" y="4" width="92" height="92" rx="14" fill="#161b22"/>
+  <!-- Hebrew letter He (ה) — represents speech/pronunciation -->
+  <text
+    x="50" y="74"
+    font-family="Arial Hebrew, David, Arial, sans-serif"
+    font-size="62"
+    font-weight="bold"
+    text-anchor="middle"
+    fill="#388bfd"
+  >ה</text>
+</svg>
