@@ -73,7 +73,6 @@ services:
   - type: web
     name: hebrew-coach-frontend
     env: static
-    plan: free
 
     rootDir: frontend
     buildCommand: npm install && npm run build
