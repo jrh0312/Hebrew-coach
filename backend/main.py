@@ -68,20 +68,23 @@ _CANTILLATION = frozenset(
     + ['\u05BD', '\u05BF']                         # meteg, rafe
 )
 
+# Word-final letters that are silent vowel-letters (matres lectionis).
+# When one of these is the last letter of a word with no dagesh/mappiq,
+# the preceding syllable is OPEN even though the letter has no vowel dot.
+_QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
+
 # High-frequency words where Kamatz is always Katan regardless of context.
 # Format: (exact-word-with-kamatz-gadol, replacement-with-qamats-katan)
 _KK_LEXICON: list[tuple[str, str]] = [
-    # כָּל  (kol — "all/every")
-    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),
-    ('\u05DB\u05B8\u05DC',       '\u05DB\u05C7\u05DC'),
-    # חָכְמָה  (chokhmah — "wisdom") — middle kamatz is katan
-    # This is handled by the syllable algorithm, not the lexicon.
+    # כָּל / כָל  (kol — "all/every") — standalone and common prefixed forms
+    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),   # כָּל
+    ('\u05DB\u05B8\u05DC',       '\u05DB\u05C7\u05DC'),           # כָל
+    ('\u05D1\u05BC\u05B0\u05DB\u05B8\u05DC', '\u05D1\u05BC\u05B0\u05DB\u05C7\u05DC'),  # בְּכָל
+    ('\u05D1\u05B0\u05DB\u05B8\u05DC',       '\u05D1\u05B0\u05DB\u05C7\u05DC'),         # בְכָל
+    ('\u05DC\u05B0\u05DB\u05B8\u05DC',       '\u05DC\u05B0\u05DB\u05C7\u05DC'),         # לְכָל
+    ('\u05D5\u05B0\u05DB\u05B8\u05DC',       '\u05D5\u05B0\u05DB\u05C7\u05DC'),         # וְכָל
+    ('\u05DE\u05B4\u05DB\u05BC\u05B8\u05DC', '\u05DE\u05B4\u05DB\u05BC\u05C7\u05DC'),  # מִכָּל
 ]
-
-
-def _heb_letters_and_vowels(word: str) -> list[str]:
-    """Return the characters of a Hebrew word (letters + diacritics, no spaces)."""
-    return list(word)
 
 
 def _has_cantillation(chars: list[str], start: int, end: int) -> bool:
@@ -99,13 +102,14 @@ def _fix_kamatz_katan(text: str) -> str:
     kamatz represents the /o/ vowel (closed, unaccented syllable).
 
     Algorithm (per word):
-      Stage 1 — Lexicon: replace known words wholesale.
+      Stage 1 — Lexicon: replace known words wholesale (handles בְּכָל etc.)
       Stage 2 — Syllable analysis on remaining words:
         A kamatz is Katan when ALL of:
           (a) The syllable has no cantillation / accent mark.
-          (b) The syllable is closed: the *next* consonant carries either
-              no vowel or only a Shva Nach (i.e. not a full vowel).
-          (c) It is not the very last vowelled position in the word.
+          (b) The syllable is closed: the *next* consonant carries no full
+              vowel (only Shva Nach or nothing at all).
+          (c) The next consonant is not a word-final quiescent ה or א
+              (those signal an open syllable even without a vowel dot).
     """
     words = text.split(' ')
     out = []
@@ -133,16 +137,6 @@ def _fix_kamatz_katan(text: str) -> str:
             if ch != _KAMATZ:
                 continue
 
-            # (c) Skip if this is the last full vowel in the word
-            # (word-final syllables are open / long by default in Biblical Hebrew)
-            last_vowel_idx = -1
-            for j in range(n - 1, -1, -1):
-                if chars[j] in _FULL_VOWELS:
-                    last_vowel_idx = j
-                    break
-            if i == last_vowel_idx:
-                continue
-
             # Find the consonant that carries this kamatz (scan left for letter)
             carrier = i - 1
             while carrier >= 0 and not _is_heb_letter(chars[carrier]):
@@ -151,10 +145,8 @@ def _fix_kamatz_katan(text: str) -> str:
                 continue
 
             # (a) Check for cantillation on this consonant cluster
-            # Cluster = carrier letter + its diacritics (dagesh, vowel, cantillation)
             cluster_start = carrier
             cluster_end = i + 1  # include the kamatz itself
-            # extend cluster_end to include any marks after the kamatz
             j = cluster_end
             while j < n and not _is_heb_letter(chars[j]):
                 cluster_end = j + 1
@@ -162,15 +154,25 @@ def _fix_kamatz_katan(text: str) -> str:
             if _has_cantillation(chars, cluster_start, cluster_end):
                 continue  # accented → Gadol
 
-            # (b) Check whether syllable is closed:
-            # Find the next consonant after this cluster and see if it has a full vowel.
+            # (b) Find the next consonant after this cluster
             next_letter_idx = cluster_end
             while next_letter_idx < n and not _is_heb_letter(chars[next_letter_idx]):
                 next_letter_idx += 1
             if next_letter_idx >= n:
-                continue  # no following consonant → word-final, leave as Gadol
+                continue  # no following consonant → open syllable, leave as Gadol
 
-            # Look at the vowel diacritic(s) that follow the next consonant
+            # (c) Word-final quiescent ה or א = open syllable even without vowel dot
+            next_letter = chars[next_letter_idx]
+            # Is this the last letter in the word (only diacritics may follow)?
+            after_next = next_letter_idx + 1
+            while after_next < n and not _is_heb_letter(chars[after_next]):
+                after_next += 1
+            is_last_letter = (after_next >= n)
+            has_mappiq = _DAGESH in chars[next_letter_idx:next_letter_idx + 3]
+            if is_last_letter and next_letter in _QUIESCENT_FINALS and not has_mappiq:
+                continue  # open syllable (silent final letter)
+
+            # Check for full vowel on the next consonant
             j = next_letter_idx + 1
             next_vowel: str | None = None
             while j < n and not _is_heb_letter(chars[j]):
@@ -179,7 +181,7 @@ def _fix_kamatz_katan(text: str) -> str:
                     break
                 j += 1
 
-            # Closed syllable: next consonant has Shva (Nach) or NO vowel at all
+            # Closed syllable: next consonant has Shva Nach or no vowel at all
             if next_vowel is None or next_vowel == _SHVA:
                 chars[i] = _QAMATS_KATAN
 
