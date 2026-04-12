@@ -47,6 +47,148 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Kamatz Katan correction
+# ---------------------------------------------------------------------------
+# Kamatz Gadol (U+05B8 ָ ) = /a/ vowel (open or accented syllable)
+# Kamatz Katan (U+05C7 ׇ ) = /o/ vowel (closed, unaccented syllable)
+# Google TTS treats them differently. We detect Kamatz Katan algorithmically
+# and replace U+05B8 → U+05C7 in the TTS-bound text only (display unchanged).
+
+_KAMATZ        = '\u05B8'   # ָ  Qamats Gadol
+_QAMATS_KATAN  = '\u05C7'   # ׇ  Qamats Katan
+_SHVA          = '\u05B0'   # ְ  Shva
+_DAGESH        = '\u05BC'   # ּ  Dagesh / Mappiq
+
+# Full vowel characters (everything except shva and half-vowels 05B1-05B3)
+_FULL_VOWELS = frozenset('\u05B4\u05B5\u05B6\u05B7\u05B8\u05B9\u05BA\u05BB\u05C7')
+
+# Cantillation / accent marks that can appear on a syllable
+_CANTILLATION = frozenset(
+    [chr(c) for c in range(0x0591, 0x05AF + 1)]  # U+0591–U+05AE
+    + ['\u05BD', '\u05BF']                         # meteg, rafe
+)
+
+# High-frequency words where Kamatz is always Katan regardless of context.
+# Format: (exact-word-with-kamatz-gadol, replacement-with-qamats-katan)
+_KK_LEXICON: list[tuple[str, str]] = [
+    # כָּל  (kol — "all/every")
+    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),
+    ('\u05DB\u05B8\u05DC',       '\u05DB\u05C7\u05DC'),
+    # חָכְמָה  (chokhmah — "wisdom") — middle kamatz is katan
+    # This is handled by the syllable algorithm, not the lexicon.
+]
+
+
+def _heb_letters_and_vowels(word: str) -> list[str]:
+    """Return the characters of a Hebrew word (letters + diacritics, no spaces)."""
+    return list(word)
+
+
+def _has_cantillation(chars: list[str], start: int, end: int) -> bool:
+    """Return True if any cantillation mark appears in chars[start:end]."""
+    return any(c in _CANTILLATION for c in chars[start:end])
+
+
+def _is_heb_letter(c: str) -> bool:
+    return '\u05D0' <= c <= '\u05EA'
+
+
+def _fix_kamatz_katan(text: str) -> str:
+    """
+    Replace Kamatz Gadol (U+05B8) with Qamats Katan (U+05C7) where the
+    kamatz represents the /o/ vowel (closed, unaccented syllable).
+
+    Algorithm (per word):
+      Stage 1 — Lexicon: replace known words wholesale.
+      Stage 2 — Syllable analysis on remaining words:
+        A kamatz is Katan when ALL of:
+          (a) The syllable has no cantillation / accent mark.
+          (b) The syllable is closed: the *next* consonant carries either
+              no vowel or only a Shva Nach (i.e. not a full vowel).
+          (c) It is not the very last vowelled position in the word.
+    """
+    words = text.split(' ')
+    out = []
+
+    for word in words:
+        # Stage 1 — lexicon substitution (whole word match)
+        replaced = False
+        for src, dst in _KK_LEXICON:
+            if word == src:
+                out.append(dst)
+                replaced = True
+                break
+        if replaced:
+            continue
+
+        # Stage 2 — character-level syllable analysis
+        if _KAMATZ not in word:
+            out.append(word)
+            continue
+
+        chars = list(word)
+        n = len(chars)
+
+        for i, ch in enumerate(chars):
+            if ch != _KAMATZ:
+                continue
+
+            # (c) Skip if this is the last full vowel in the word
+            # (word-final syllables are open / long by default in Biblical Hebrew)
+            last_vowel_idx = -1
+            for j in range(n - 1, -1, -1):
+                if chars[j] in _FULL_VOWELS:
+                    last_vowel_idx = j
+                    break
+            if i == last_vowel_idx:
+                continue
+
+            # Find the consonant that carries this kamatz (scan left for letter)
+            carrier = i - 1
+            while carrier >= 0 and not _is_heb_letter(chars[carrier]):
+                carrier -= 1
+            if carrier < 0:
+                continue
+
+            # (a) Check for cantillation on this consonant cluster
+            # Cluster = carrier letter + its diacritics (dagesh, vowel, cantillation)
+            cluster_start = carrier
+            cluster_end = i + 1  # include the kamatz itself
+            # extend cluster_end to include any marks after the kamatz
+            j = cluster_end
+            while j < n and not _is_heb_letter(chars[j]):
+                cluster_end = j + 1
+                j += 1
+            if _has_cantillation(chars, cluster_start, cluster_end):
+                continue  # accented → Gadol
+
+            # (b) Check whether syllable is closed:
+            # Find the next consonant after this cluster and see if it has a full vowel.
+            next_letter_idx = cluster_end
+            while next_letter_idx < n and not _is_heb_letter(chars[next_letter_idx]):
+                next_letter_idx += 1
+            if next_letter_idx >= n:
+                continue  # no following consonant → word-final, leave as Gadol
+
+            # Look at the vowel diacritic(s) that follow the next consonant
+            j = next_letter_idx + 1
+            next_vowel: str | None = None
+            while j < n and not _is_heb_letter(chars[j]):
+                if chars[j] in _FULL_VOWELS or chars[j] == _SHVA:
+                    next_vowel = chars[j]
+                    break
+                j += 1
+
+            # Closed syllable: next consonant has Shva (Nach) or NO vowel at all
+            if next_vowel is None or next_vowel == _SHVA:
+                chars[i] = _QAMATS_KATAN
+
+        out.append(''.join(chars))
+
+    return ' '.join(out)
+
+
+# ---------------------------------------------------------------------------
 # Google Cloud TTS helpers
 # ---------------------------------------------------------------------------
 
@@ -83,6 +225,7 @@ def synthesize_speech(text: str) -> bytes:
 
     text = text.replace("יְהוָה", "השם")
     text = text.replace("יהוה", "השם")
+    text = _fix_kamatz_katan(text)
     synthesis_input = tts.SynthesisInput(text=text)
     audio_config = tts.AudioConfig(
         audio_encoding=tts.AudioEncoding.MP3,
