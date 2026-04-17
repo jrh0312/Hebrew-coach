@@ -180,6 +180,12 @@ def _fix_kamatz_katan(text: str) -> str:
                     next_vowel = chars[j]
                     break
                 j += 1
+            # Holam-vav / shureq / hiriq-yod: ו or י immediately after the next
+            # consonant act as vowel letters → the preceding syllable is OPEN.
+            # (e.g. צוֹ in בְּרָצוֹן — ו is seen as a Hebrew letter so the loop above
+            # exits without finding a vowel diacritic, but the syllable is still open.)
+            if next_vowel is None and j < n and chars[j] in '\u05D5\u05D9':
+                next_vowel = '\u05B9'  # treat as full vowel (open syllable)
 
             # Closed syllable: next consonant has Shva Nach or no vowel at all
             if next_vowel is None or next_vowel == _SHVA:
