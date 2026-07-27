@@ -284,6 +284,7 @@ class PrefetchRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/health")
+@app.head("/api/health")
 async def health():
     return {"status": "ok", "service": "hebrew-pronunciation-coach"}
 
