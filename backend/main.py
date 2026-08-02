@@ -77,6 +77,12 @@ _CANTILLATION = frozenset(
 # the preceding syllable is OPEN even though the letter has no vowel dot.
 _QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
 
+# Letters that cannot be geminated in Biblical Hebrew: gutturals + resh.
+# A plain sheva on any of these after a kamatz is ALWAYS vocal (sheva na),
+# meaning the preceding syllable is OPEN → Kamatz Gadol, not Katan.
+# Example: בָּרְכֵנו — ר cannot double, its sheva is vocal, בָּ is open → /a/.
+_NON_GEMINABLES = frozenset('\u05D0\u05D4\u05D7\u05E2\u05E8')  # א ה ח ע ר
+
 # Stage 1a — global substring for כָּל WITH dagesh (unambiguous "all/every").
 # Two orderings: some texts put dagesh before kamatz (05BC 05B8), others after (05B8 05BC).
 _KK_SUBSTRINGS: list[tuple[str, str]] = [
@@ -197,11 +203,19 @@ def _fix_kamatz_katan(text: str) -> str:
                 next_vowel = '\u05B9'  # treat as full vowel (open syllable)
 
             # Convert to Katan ONLY in a non-word-final closed syllable.
-            # Word-final closed syllables (לָךְ, יָד, קָם, דָּבָר) are typically
-            # stressed in Hebrew → Gadol. The substring lexicon already handles
-            # always-Katan word-final cases like כָּל before we reach this stage.
-            if (next_vowel is None or next_vowel in _REDUCED_VOWELS) and not is_last_letter:
-                chars[i] = _QAMATS_KATAN
+            # Word-final closed syllables (לָךְ, יָד) are typically stressed → Gadol.
+            # Chataf vowels (05B1/B2/B3) are always vocal → never close a syllable.
+            # Plain sheva on gutturals/resh is also always vocal (they can't geminate).
+            # Safety net: 2+ full vowels remaining → word has too many syllables for
+            # the sheva to be silent → likely vocal → Gadol.
+            if not is_last_letter:
+                if next_vowel is None:
+                    chars[i] = _QAMATS_KATAN
+                elif next_vowel == '\u05B0':  # plain sheva only (chataf = always vocal)
+                    if next_letter not in _NON_GEMINABLES:
+                        remaining_full = sum(1 for c in chars[i + 1:] if c in _FULL_VOWELS)
+                        if remaining_full < 2:
+                            chars[i] = _QAMATS_KATAN
 
         out.append(''.join(chars))
 
