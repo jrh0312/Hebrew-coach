@@ -77,13 +77,19 @@ _CANTILLATION = frozenset(
 # the preceding syllable is OPEN even though the letter has no vowel dot.
 _QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
 
-# Substrings that are always Kamatz Katan regardless of prefix or context.
-# Applied as global text replacements before word-level analysis.
-# Only כָּל WITH dagesh (U+05BC) in the kaf — the word "all/every".
-# Without-dagesh כָל is left to the algorithm to avoid false matches (e.g. כָלוּ "they ceased").
+# Stage 1a — global substring for כָּל WITH dagesh (unambiguous "all/every").
+# Two orderings: some texts put dagesh before kamatz (05BC 05B8), others after (05B8 05BC).
 _KK_SUBSTRINGS: list[tuple[str, str]] = [
-    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),  # כָּל → כׇּל (with dagesh only)
+    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),  # כָּל (dagesh first)
+    ('\u05DB\u05B8\u05BC\u05DC', '\u05DB\u05C7\u05BC\u05DC'),  # כָּל (kamatz first)
 ]
+
+# Stage 1b — suffix constants for כָל WITHOUT dagesh.
+# Using word-end suffix matching (not global substring) avoids false positives
+# like כָלוּ (chalu = "they ceased") which starts with כָל but ends with לוּ.
+_KOL          = '\u05DB\u05B8\u05DC'   # כָל  (without dagesh)
+_KOL_FIX      = '\u05DB\u05C7\u05DC'   # כׇל
+_MAQAF        = '\u05BE'                  # ־  maqqaf (word-joiner)
 
 
 def _has_cantillation(chars: list[str], start: int, end: int) -> bool:
@@ -110,8 +116,7 @@ def _fix_kamatz_katan(text: str) -> str:
           (c) The next consonant is not a word-final quiescent ה or א
               (those signal an open syllable even without a vowel dot).
     """
-    # Stage 1 — global substring replacement for always-Katan patterns.
-    # Catches כָל / כָּל regardless of prefix (בְּכָל, לְכָל, שֶׁבְּכָל, etc.)
+    # Stage 1a — global substring: כָּל WITH dagesh is always kol wherever it appears
     for src, dst in _KK_SUBSTRINGS:
         text = text.replace(src, dst)
 
@@ -119,6 +124,12 @@ def _fix_kamatz_katan(text: str) -> str:
     out = []
 
     for word in words:
+        # Stage 1b — suffix match: כָל WITHOUT dagesh at word-end = kol "all/every".
+        # endswith() is critical: it catches שֶׁבְּכָל but not כָלוּ (ends with לוּ).
+        if word.endswith(_KOL + _MAQAF):
+            word = word[:-4] + _KOL_FIX + _MAQAF
+        elif word.endswith(_KOL):
+            word = word[:-3] + _KOL_FIX
 
         # Stage 2 — character-level syllable analysis
         if _KAMATZ not in word:
