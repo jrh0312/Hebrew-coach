@@ -77,17 +77,12 @@ _CANTILLATION = frozenset(
 # the preceding syllable is OPEN even though the letter has no vowel dot.
 _QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
 
-# High-frequency words where Kamatz is always Katan regardless of context.
-# Format: (exact-word-with-kamatz-gadol, replacement-with-qamats-katan)
-_KK_LEXICON: list[tuple[str, str]] = [
-    # כָּל / כָל  (kol — "all/every") — standalone and common prefixed forms
-    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),   # כָּל
-    ('\u05DB\u05B8\u05DC',       '\u05DB\u05C7\u05DC'),           # כָל
-    ('\u05D1\u05BC\u05B0\u05DB\u05B8\u05DC', '\u05D1\u05BC\u05B0\u05DB\u05C7\u05DC'),  # בְּכָל
-    ('\u05D1\u05B0\u05DB\u05B8\u05DC',       '\u05D1\u05B0\u05DB\u05C7\u05DC'),         # בְכָל
-    ('\u05DC\u05B0\u05DB\u05B8\u05DC',       '\u05DC\u05B0\u05DB\u05C7\u05DC'),         # לְכָל
-    ('\u05D5\u05B0\u05DB\u05B8\u05DC',       '\u05D5\u05B0\u05DB\u05C7\u05DC'),         # וְכָל
-    ('\u05DE\u05B4\u05DB\u05BC\u05B8\u05DC', '\u05DE\u05B4\u05DB\u05BC\u05C7\u05DC'),  # מִכָּל
+# Substrings that are always Kamatz Katan regardless of prefix or context.
+# Applied as global text replacements before word-level analysis.
+# כָּל (with dagesh) and כָל (without) → always /o/ — kol "all/every"
+_KK_SUBSTRINGS: list[tuple[str, str]] = [
+    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),  # כָּל → כׇּל
+    ('\u05DB\u05B8\u05DC',        '\u05DB\u05C7\u05DC'),          # כָל  → כׇל
 ]
 
 
@@ -115,19 +110,15 @@ def _fix_kamatz_katan(text: str) -> str:
           (c) The next consonant is not a word-final quiescent ה or א
               (those signal an open syllable even without a vowel dot).
     """
+    # Stage 1 — global substring replacement for always-Katan patterns.
+    # Catches כָל / כָּל regardless of prefix (בְּכָל, לְכָל, שֶׁבְּכָל, etc.)
+    for src, dst in _KK_SUBSTRINGS:
+        text = text.replace(src, dst)
+
     words = text.split(' ')
     out = []
 
     for word in words:
-        # Stage 1 — lexicon substitution (whole word match)
-        replaced = False
-        for src, dst in _KK_LEXICON:
-            if word == src:
-                out.append(dst)
-                replaced = True
-                break
-        if replaced:
-            continue
 
         # Stage 2 — character-level syllable analysis
         if _KAMATZ not in word:
@@ -194,11 +185,11 @@ def _fix_kamatz_katan(text: str) -> str:
             if next_vowel is None and j < n and chars[j] in '\u05D5\u05D9':
                 next_vowel = '\u05B9'  # treat as full vowel (open syllable)
 
-            # Convert to Katan only in an UNSTRESSED closed syllable.
-            # Word-final closed syllables (is_last_letter) are typically stressed
-            # in Hebrew (e.g. יָד, קָם, דָּבָר) and must stay Gadol.
-            # Exceptions (כָּל etc.) are already handled by the Stage-1 lexicon.
-            if (next_vowel is None or next_vowel in _REDUCED_VOWELS) and not is_last_letter:
+            # Convert to Katan: closed syllable (no vowel or only a reduced vowel)
+            # and no cantillation mark (unaccented).
+            # Word-final stressed syllables (e.g. יָד, קָם) will have a trop mark
+            # in properly pointed liturgical text and are protected by check (a) above.
+            if next_vowel is None or next_vowel in _REDUCED_VOWELS:
                 chars[i] = _QAMATS_KATAN
 
         out.append(''.join(chars))
