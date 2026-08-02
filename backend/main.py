@@ -185,11 +185,11 @@ def _fix_kamatz_katan(text: str) -> str:
             if next_vowel is None and j < n and chars[j] in '\u05D5\u05D9':
                 next_vowel = '\u05B9'  # treat as full vowel (open syllable)
 
-            # Convert to Katan: closed syllable (no vowel or only a reduced vowel)
-            # and no cantillation mark (unaccented).
-            # Word-final stressed syllables (e.g. יָד, קָם) will have a trop mark
-            # in properly pointed liturgical text and are protected by check (a) above.
-            if next_vowel is None or next_vowel in _REDUCED_VOWELS:
+            # Convert to Katan ONLY in a non-word-final closed syllable.
+            # Word-final closed syllables (לָךְ, יָד, קָם, דָּבָר) are typically
+            # stressed in Hebrew → Gadol. The substring lexicon already handles
+            # always-Katan word-final cases like כָּל before we reach this stage.
+            if (next_vowel is None or next_vowel in _REDUCED_VOWELS) and not is_last_letter:
                 chars[i] = _QAMATS_KATAN
 
         out.append(''.join(chars))
