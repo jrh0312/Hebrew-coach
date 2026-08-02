@@ -79,10 +79,10 @@ _QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
 
 # Substrings that are always Kamatz Katan regardless of prefix or context.
 # Applied as global text replacements before word-level analysis.
-# כָּל (with dagesh) and כָל (without) → always /o/ — kol "all/every"
+# Only כָּל WITH dagesh (U+05BC) in the kaf — the word "all/every".
+# Without-dagesh כָל is left to the algorithm to avoid false matches (e.g. כָלוּ "they ceased").
 _KK_SUBSTRINGS: list[tuple[str, str]] = [
-    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),  # כָּל → כׇּל
-    ('\u05DB\u05B8\u05DC',        '\u05DB\u05C7\u05DC'),          # כָל  → כׇל
+    ('\u05DB\u05BC\u05B8\u05DC', '\u05DB\u05BC\u05C7\u05DC'),  # כָּל → כׇּל (with dagesh only)
 ]
 
 
