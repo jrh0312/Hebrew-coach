@@ -56,11 +56,15 @@ app.add_middleware(
 
 _KAMATZ        = '\u05B8'   # ָ  Qamats Gadol
 _QAMATS_KATAN  = '\u05C7'   # ׇ  Qamats Katan
-_SHVA          = '\u05B0'   # ְ  Shva
 _DAGESH        = '\u05BC'   # ּ  Dagesh / Mappiq
 
-# Full vowel characters (everything except shva and half-vowels 05B1-05B3)
+# Full vowel characters — long/short vowels that start a new syllable
 _FULL_VOWELS = frozenset('\u05B4\u05B5\u05B6\u05B7\u05B8\u05B9\u05BA\u05BB\u05C7')
+
+# Reduced vowels: shva + three chataf vowels (chataf-segol/patah/kamatz).
+# A consonant with one of these does NOT start a new full syllable —
+# the preceding kamatz is therefore in a closed (potentially Katan) syllable.
+_REDUCED_VOWELS = frozenset('\u05B0\u05B1\u05B2\u05B3')  # ְ ֱ ֲ ֳ
 
 # Cantillation / accent marks that can appear on a syllable
 _CANTILLATION = frozenset(
@@ -172,12 +176,15 @@ def _fix_kamatz_katan(text: str) -> str:
             if is_last_letter and next_letter in _QUIESCENT_FINALS and not has_mappiq:
                 continue  # open syllable (silent final letter)
 
-            # Check for full vowel on the next consonant
+            # Check for vowel on the next consonant
             j = next_letter_idx + 1
             next_vowel: str | None = None
             while j < n and not _is_heb_letter(chars[j]):
-                if chars[j] in _FULL_VOWELS or chars[j] == _SHVA:
-                    next_vowel = chars[j]
+                if chars[j] in _FULL_VOWELS:
+                    next_vowel = chars[j]  # full vowel → open syllable
+                    break
+                if chars[j] in _REDUCED_VOWELS:
+                    next_vowel = chars[j]  # shva / chataf → closed syllable
                     break
                 j += 1
             # Holam-vav / shureq / hiriq-yod: ו or י immediately after the next
@@ -187,8 +194,11 @@ def _fix_kamatz_katan(text: str) -> str:
             if next_vowel is None and j < n and chars[j] in '\u05D5\u05D9':
                 next_vowel = '\u05B9'  # treat as full vowel (open syllable)
 
-            # Closed syllable: next consonant has Shva Nach or no vowel at all
-            if next_vowel is None or next_vowel == _SHVA:
+            # Convert to Katan only in an UNSTRESSED closed syllable.
+            # Word-final closed syllables (is_last_letter) are typically stressed
+            # in Hebrew (e.g. יָד, קָם, דָּבָר) and must stay Gadol.
+            # Exceptions (כָּל etc.) are already handled by the Stage-1 lexicon.
+            if (next_vowel is None or next_vowel in _REDUCED_VOWELS) and not is_last_letter:
                 chars[i] = _QAMATS_KATAN
 
         out.append(''.join(chars))
