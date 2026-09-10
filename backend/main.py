@@ -8,6 +8,7 @@ Endpoints:
 """
 
 import os
+import re
 import json
 import base64
 import tempfile
@@ -96,6 +97,11 @@ _KK_SUBSTRINGS: list[tuple[str, str]] = [
 _KOL          = '\u05DB\u05B8\u05DC'   # כָל  (without dagesh)
 _KOL_FIX      = '\u05DB\u05C7\u05DC'   # כׇל
 _MAQAF        = '\u05BE'                  # ־  maqqaf (word-joiner)
+
+# Regex that matches the Tetragrammaton (YHWH) in ANY Unicode vowel pointing.
+# Simple string literals miss when diacritics differ in order or encoding across
+# Hebrew text sources. This matches י + optional diacritics + ה + opt + ו + opt + ה.
+_YHWH_RE = re.compile(r'\u05D9[\u0591-\u05C7]*\u05D4[\u0591-\u05C7]*\u05D5[\u0591-\u05C7]*\u05D4')
 
 
 def _has_cantillation(chars: list[str], start: int, end: int) -> bool:
@@ -257,8 +263,7 @@ def synthesize_speech(text: str) -> bytes:
 
     client = _build_tts_client()
 
-    text = text.replace("יְהוָה", "השם")
-    text = text.replace("יהוה", "השם")
+    text = _YHWH_RE.sub("השם", text)  # replace in any Unicode pointing
     text = _fix_kamatz_katan(text)
     synthesis_input = tts.SynthesisInput(text=text)
     audio_config = tts.AudioConfig(
