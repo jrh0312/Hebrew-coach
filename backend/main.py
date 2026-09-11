@@ -348,7 +348,15 @@ def _fix_begadkefat(text: str) -> str:
 # Google Cloud TTS helpers
 # ---------------------------------------------------------------------------
 
-_WAVENET_VOICES = ["he-IL-Wavenet-A", "he-IL-Wavenet-B"]
+# Neural2 voices are newer and handle Hebrew nikud (vowel points) more
+# precisely than Wavenet — especially vocal shevas and short vowels.
+# The synthesize loop tries these in order and falls back on any error.
+_WAVENET_VOICES = [
+    "he-IL-Neural2-A",
+    "he-IL-Neural2-B",
+    "he-IL-Wavenet-A",
+    "he-IL-Wavenet-B",
+]
 
 
 def _build_tts_client():
@@ -409,7 +417,7 @@ def synthesize_speech(text: str) -> bytes:
     raise HTTPException(
         status_code=502,
         detail=(
-            f"Google Cloud TTS failed for both Wavenet voices. "
+            f"Google Cloud TTS failed for all voices. "
             f"Last error: {last_error}"
         ),
     )
