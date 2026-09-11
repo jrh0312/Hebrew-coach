@@ -90,7 +90,7 @@ _NON_GEMINABLES = frozenset('\u05D0\u05D4\u05D7\u05E2\u05E8')  # א ה ח ע ר
 #   פ / ף (no dagesh = f, dagesh = p)
 # A dagesh in a SOFT position (after a full vowel or vocal sheva) causes Google
 # TTS to pronounce the letter as a hard stop instead of a fricative.
-_BGDKPT = frozenset('\u05D1\u05DB\u05DA\u05E4\u05E3')  # ב כ ך פ ף
+_BGDKPT = frozenset('\u05D1')  # ב only — כ/ך/פ/ף dagesh removal causes chazak regression
 
 # Stage 1a — global substring for כָּל WITH dagesh (unambiguous "all/every").
 # Two orderings: some texts put dagesh before kamatz (05BC 05B8), others after (05B8 05BC).
@@ -272,21 +272,12 @@ def _is_vocal_sheva(chars: list[str], sheva_idx: int) -> bool:
 
 def _fix_begadkefat(text: str) -> str:
     """
-    Enforce the begadkefat (dagesh lene) rule for ב כ ך פ ף.
+    Fix ב (bet) dagesh lene: remove dagesh when ב appears in soft position
+    (after a full vowel or vocal sheva), so TTS pronounces it as v not b.
 
-    These letters have TWO pronunciations depending on position:
-      • Soft (fricative) — no dagesh: ב=v, כ/ך=kh, פ/ף=f
-      • Hard (stop)     — dagesh:    ב=b, כ/ך=k,  פ/ף=p
-
-    A letter is in SOFT position (must NOT have dagesh) when it follows:
-      1. A full vowel directly (e.g. בָרֶ, מְדַבֵּר)
-      2. A vocal sheva (shva na), which itself follows a full vowel
-         (e.g. וּדְבָרֶךָ — the ב follows ד+vocal-sheva after ו+shuruk)
-
-    Source texts sometimes carry incorrect dagesh on these letters in soft
-    positions (or TTS may infer a hard consonant when no dagesh is present).
-    This function removes any dagesh found in soft positions so that Google
-    TTS always receives an unambiguous signal.
+    כ/ך/פ/ף are intentionally excluded — their dagesh marks may be dagesh
+    chazak (gemination, e.g. הַכּוֹל = ha-KOL) which must not be removed.
+    Google TTS handles those letters reliably from the nikud it receives.
     """
     words = text.split(' ')
     out = []
