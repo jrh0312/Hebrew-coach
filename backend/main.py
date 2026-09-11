@@ -84,6 +84,14 @@ _QUIESCENT_FINALS = frozenset('\u05D4\u05D0')  # ה, א
 # Example: בָּרְכֵנו — ר cannot double, its sheva is vocal, בָּ is open → /a/.
 _NON_GEMINABLES = frozenset('\u05D0\u05D4\u05D7\u05E2\u05E8')  # א ה ח ע ר
 
+# Begadkefat letters whose hard/soft distinction matters in Modern Hebrew TTS:
+#   ב (no dagesh = v, dagesh = b)
+#   כ / ך (no dagesh = kh, dagesh = k)
+#   פ / ף (no dagesh = f, dagesh = p)
+# A dagesh in a SOFT position (after a full vowel or vocal sheva) causes Google
+# TTS to pronounce the letter as a hard stop instead of a fricative.
+_BGDKPT = frozenset('\u05D1\u05DB\u05DA\u05E4\u05E3')  # ב כ ך פ ף
+
 # Stage 1a — global substring for כָּל WITH dagesh (unambiguous "all/every").
 # Two orderings: some texts put dagesh before kamatz (05BC 05B8), others after (05B8 05BC).
 _KK_SUBSTRINGS: list[tuple[str, str]] = [
@@ -228,6 +236,114 @@ def _fix_kamatz_katan(text: str) -> str:
     return ' '.join(out)
 
 
+def _is_vocal_sheva(chars: list[str], sheva_idx: int) -> bool:
+    """
+    Return True if the sheva at chars[sheva_idx] is a vocal sheva (shva na).
+
+    A sheva is vocal when the consonant carrying it directly follows a full
+    vowel (or is the first consonant of the word).  Shuruk is encoded as
+    vav (U+05D5) + dagesh dot (U+05BC) — recognised here as a full vowel.
+    """
+    # Find the consonant carrying this sheva
+    carrier = sheva_idx - 1
+    while carrier >= 0 and not _is_heb_letter(chars[carrier]):
+        carrier -= 1
+    if carrier < 0:
+        return True  # first letter of word → always vocal
+
+    # Find the consonant immediately before the carrier
+    prev_letter = carrier - 1
+    while prev_letter >= 0 and not _is_heb_letter(chars[prev_letter]):
+        prev_letter -= 1
+    if prev_letter < 0:
+        return True  # carrier IS the first letter → vocal
+
+    # Examine diacritics attached to prev_letter (chars between prev_letter and carrier)
+    for j in range(prev_letter + 1, carrier):
+        c = chars[j]
+        if c in _FULL_VOWELS:
+            return True  # full vowel on preceding letter → sheva is vocal
+        # Shuruk = vav (U+05D5) with dagesh dot (U+05BC) = long /u/ vowel
+        if chars[prev_letter] == '\u05D5' and c == '\u05BC':
+            return True
+
+    return False  # conservative: treat as silent sheva
+
+
+def _fix_begadkefat(text: str) -> str:
+    """
+    Enforce the begadkefat (dagesh lene) rule for ב כ ך פ ף.
+
+    These letters have TWO pronunciations depending on position:
+      • Soft (fricative) — no dagesh: ב=v, כ/ך=kh, פ/ף=f
+      • Hard (stop)     — dagesh:    ב=b, כ/ך=k,  פ/ף=p
+
+    A letter is in SOFT position (must NOT have dagesh) when it follows:
+      1. A full vowel directly (e.g. בָרֶ, מְדַבֵּר)
+      2. A vocal sheva (shva na), which itself follows a full vowel
+         (e.g. וּדְבָרֶךָ — the ב follows ד+vocal-sheva after ו+shuruk)
+
+    Source texts sometimes carry incorrect dagesh on these letters in soft
+    positions (or TTS may infer a hard consonant when no dagesh is present).
+    This function removes any dagesh found in soft positions so that Google
+    TTS always receives an unambiguous signal.
+    """
+    words = text.split(' ')
+    out = []
+    for word in words:
+        chars = list(word)
+        n = len(chars)
+        i = 0
+        while i < n:
+            c = chars[i]
+            if _is_heb_letter(c) and c in _BGDKPT:
+                # Scan back to find the vowel (or sheva) on the preceding letter
+                j = i - 1
+                prev_vowel: str | None = None
+                prev_vowel_idx: int = -1
+                while j >= 0 and not _is_heb_letter(chars[j]):
+                    if chars[j] in _FULL_VOWELS:
+                        prev_vowel = chars[j]
+                        prev_vowel_idx = j
+                        break
+                    if chars[j] == '\u05B0':  # plain sheva
+                        prev_vowel = '\u05B0'
+                        prev_vowel_idx = j
+                        break
+                    if chars[j] == '\u05BC':
+                        # U+05BC on ו = shuruk (long /u/) = full vowel
+                        # Find the Hebrew letter this dot belongs to
+                        k = j - 1
+                        while k >= 0 and not _is_heb_letter(chars[k]):
+                            k -= 1
+                        if k >= 0 and chars[k] == '\u05D5':  # vav
+                            prev_vowel = '\u05BB'  # treat as qibbuts/full vowel
+                            prev_vowel_idx = j
+                            break
+                    j -= 1
+
+                # Determine if this letter is in a soft position
+                is_soft = False
+                if prev_vowel in _FULL_VOWELS:
+                    is_soft = True  # directly after a full vowel
+                elif prev_vowel == '\u05B0':
+                    # After sheva: soft only if the sheva itself is vocal
+                    is_soft = _is_vocal_sheva(chars, prev_vowel_idx)
+
+                if is_soft:
+                    # Remove any dagesh immediately after this letter
+                    k = i + 1
+                    while k < n and not _is_heb_letter(chars[k]):
+                        if chars[k] == _DAGESH:
+                            chars.pop(k)
+                            n -= 1
+                            break
+                        k += 1
+            i += 1
+        out.append(''.join(chars))
+    return ' '.join(out)
+
+
 # ---------------------------------------------------------------------------
 # Google Cloud TTS helpers
 # ---------------------------------------------------------------------------
@@ -265,6 +381,7 @@ def synthesize_speech(text: str) -> bytes:
 
     text = _YHWH_RE.sub("השם", text)  # replace in any Unicode pointing
     text = _fix_kamatz_katan(text)
+    text = _fix_begadkefat(text)
     synthesis_input = tts.SynthesisInput(text=text)
     audio_config = tts.AudioConfig(
         audio_encoding=tts.AudioEncoding.MP3,
